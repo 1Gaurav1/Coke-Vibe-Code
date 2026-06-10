@@ -2,7 +2,7 @@
 
 An immersive and premium Coca-Cola inspired landing page built with modern web technologies. This project combines smooth animations, interactive visual effects, cinematic transitions, and synchronized audio experiences to create a high-end product showcase.
 
-![Project Preview](./Photos/preview.png)
+![Project Preview](image.png)
 
 ---
 
