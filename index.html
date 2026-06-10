@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coke Vibe - Ultimate Immersive Experience</title>
+    <link rel="icon" type="image/svg+xml" href="https://upload.wikimedia.org/wikipedia/commons/c/ce/Coca-Cola_logo.svg">
+    
+    <!-- AVIF + CDN Preload Migration -->
+    <link rel="preconnect" href="https://cdn.coca-cola.com" crossorigin>
+    <!-- Preloading first 10 frames (assuming local paths for demo, but mimicking the AVIF structure) -->
+    <link rel="preload" href="Photos/frame-001.jpg" as="image">
+    <link rel="preload" href="Photos/frame-002.jpg" as="image">
+    <link rel="preload" href="Photos/frame-003.jpg" as="image">
+    <link rel="preload" href="Photos/frame-004.jpg" as="image">
+    <link rel="preload" href="Photos/frame-005.jpg" as="image">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* =========================================
+           Merged style.css for single-file output
+           ========================================= */
+        body, html {
+            margin: 0; padding: 0; background-color: #000; overscroll-behavior: none;
+            overflow: hidden; width: 100%; max-width: 100%;
+        }
+        body.loaded, html.loaded { overflow: visible; }
+        .scroll-container { height: 800vh; opacity: 0; transition: opacity 1.5s ease-in-out; pointer-events: none; }
+        .scroll-container.visible { opacity: 1; pointer-events: auto; }
+        
+        .sticky-container {
+            position: sticky; top: 0; left: 0; width: 100%; height: 100vh; overflow: hidden;
+            display: flex; justify-content: center; align-items: center; background-color: #050505;
+        }
+        
+        canvas.main-canvas { width: 100%; height: 100vh; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 0; }
+        
+        /* Loading Screen */
+        #loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background-color: #000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
+            transition: opacity 1.2s cubic-bezier(0.4, 0, 0.2, 1), visibility 1.2s;
+        }
+        #loader.hidden { opacity: 0; visibility: hidden; }
+        .coke-logo { width: 320px; max-width: 80vw; margin-bottom: 50px; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 20px rgba(255, 0, 0, 0.3)); }
+        .spinner { width: 40px; height: 40px; border: 3px solid rgba(255, 0, 0, 0.1); border-radius: 50%; border-top-color: #ff0000; animation: spin 1s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite; margin-bottom: 20px; }
+        .loading-text { color: #ff0000; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 1rem; font-weight: 600; letter-spacing: 4px; text-transform: uppercase; animation: pulse 2s infinite alternate; }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes float { 0% { transform: translateY(0px) scale(1); } 50% { transform: translateY(-10px) scale(1.02); } 100% { transform: translateY(0px) scale(1); } }
+        @keyframes pulse { 0% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
+
+        /* Fast Glows */
+        .fast-glow-1 { background: radial-gradient(circle, rgba(220, 38, 38, 0.15) 0%, transparent 70%); }
+        .fast-glow-2 { background: radial-gradient(circle, rgba(185, 28, 28, 0.1) 0%, transparent 70%); }
+
+        /* Magnetic Cursor System */
+        body { cursor: none; }
+        a, button, input { cursor: none; }
+        
+        #cursor-dot {
+            position: fixed; top: 0; left: 0; width: 10px; height: 10px; background: #dc2626; border-radius: 50%;
+            pointer-events: none; z-index: 9999; transform: translate(-50%, -50%);
+            mix-blend-mode: difference; transition: opacity 0.3s;
+        }
+        #cursor-ring {
+            position: fixed; top: 0; left: 0; width: 40px; height: 40px; border: 1px solid #dc2626; border-radius: 50%;
+            pointer-events: none; z-index: 9998; transform: translate(-50%, -50%);
+            transition: width 0.3s, height 0.3s, background-color 0.3s;
+        }
+
+        /* Accessibility: Reduced Motion */
+        @media (prefers-reduced-motion: reduce) {
+            * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+            #cursor-dot, #cursor-ring { display: none !important; }
+            body { cursor: auto !important; }
+            a, button, input { cursor: pointer !important; }
+        }
+    </style>
+</head>
+<body class="bg-[#050505] text-white selection:bg-red-600 font-sans" aria-live="polite">
+    <!-- Magnetic Cursor -->
+    <div id="cursor-dot" class="hidden md:block"></div>
+    <div id="cursor-ring" class="hidden md:block"></div>
+
+    <audio id="videoAudio" src="Photos/video_audio.mp3" preload="auto" class="hidden"></audio>
+
+    <!-- Particles Overlays -->
+    <canvas id="particleCanvas" class="fixed inset-0 pointer-events-none z-[9997]"></canvas>
+
+    <!-- Preloader -->
+    <div id="loader">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/c/ce/Coca-Cola_logo.svg" alt="Coca-Cola Logo" class="coke-logo">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">LOADING 0%</div>
+        <div class="absolute bottom-0 left-0 h-1 bg-red-600 transition-all duration-[400ms] ease-out shadow-[0_0_20px_rgba(255,0,0,1)]" id="loadingBar" style="width: 0%"></div>
+    </div>
+
+
+
+    <!-- Main Scroll Container -->
+    <div class="scroll-container" id="scrollContainer">
+        <div class="sticky-container">
+            
+            <canvas id="animationCanvas" class="main-canvas"></canvas>
+
+            <!-- Nav -->
+            <nav class="absolute top-0 w-full flex items-center justify-between px-8 md:px-16 py-8 z-[50]">
+              <div class="magnetic-btn w-28 md:w-32 transition-transform hover:scale-105">
+                 <img src="https://upload.wikimedia.org/wikipedia/commons/c/ce/Coca-Cola_logo.svg" alt="Coca-Cola" class="w-full h-auto filter drop-shadow-[0_0_8px_rgba(255,0,0,0.5)]">
+              </div>
+              <div class="hidden md:flex gap-12 text-xs font-bold tracking-[0.2em] uppercase text-white/70">
+                <a href="#" class="group relative hover:text-white transition-colors duration-300 magnetic-btn">Vision<span class="absolute -bottom-1 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full"></span></a>
+                <a href="#" class="group relative hover:text-white transition-colors duration-300 magnetic-btn">Design<span class="absolute -bottom-1 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full"></span></a>
+                <a href="#" class="group relative hover:text-white transition-colors duration-300 magnetic-btn">Taste<span class="absolute -bottom-1 left-0 w-0 h-[2px] bg-red-600 transition-all duration-300 group-hover:w-full"></span></a>
+              </div>
+              
+              <!-- Spatial Audio Mute Toggle -->
+              <button id="muteToggle" class="magnetic-btn w-10 h-10 border border-white/20 flex items-center justify-center rounded-full backdrop-blur-md hover:bg-white/10 transition-colors">
+                <svg id="audioIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-white">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path id="audioWave" d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                </svg>
+              </button>
+            </nav>
+
+            <!-- Parallax Glows -->
+            <div id="ambient1" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] rounded-full fast-glow-1 pointer-events-none z-0"></div>
+            <div class="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full fast-glow-2 pointer-events-none z-0"></div>
+
+            <!-- SVG Ribbons -->
+            <div class="absolute inset-0 pointer-events-none z-10 hidden md:block" id="ribbonContainer">
+              <svg class="w-full h-full" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  <linearGradient id="glowRed" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#ff0000" stop-opacity="0" />
+                    <stop offset="20%" stop-color="#ff0000" stop-opacity="0.4" />
+                    <stop offset="50%" stop-color="#ff4d4d" stop-opacity="1" />
+                    <stop offset="80%" stop-color="#ff0000" stop-opacity="0.4" />
+                    <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <path id="ribbon1" d="M 1600,300 C 1200,500 900,-100 700,450 C 500,1000 -100,600 -200,900" fill="none" stroke="url(#glowRed)" stroke-width="20" class="opacity-80" pathLength="1" style="stroke-dasharray: 1; stroke-dashoffset: 1;" />
+                <path id="ribbon2" d="M 1600,300 C 1200,500 900,-100 700,450 C 500,1000 -100,600 -200,900" fill="none" stroke="#ffffff" stroke-width="2" class="opacity-40" pathLength="1" style="stroke-dasharray: 1; stroke-dashoffset: 1;" />
+                <path id="ribbon3" d="M 1600,350 C 1100,550 950,-50 650,500 C 450,1050 0,650 -200,950" fill="none" stroke="url(#glowRed)" stroke-width="8" class="opacity-40" pathLength="1" style="stroke-dasharray: 1; stroke-dashoffset: 1;" />
+              </svg>
+            </div>
+
+            <!-- Narratives -->
+            <div id="layer1" class="absolute inset-0 flex flex-col items-start justify-center pl-[5vw] md:pl-[10vw] z-20 pointer-events-none text-white">
+               <div class="mb-8 items-center gap-4 hidden md:flex">
+                  <span class="w-12 h-[1px] bg-red-600"></span>
+                  <span class="text-xs font-bold tracking-[0.4em] uppercase text-white/50" id="accessibleText1">The New Standard</span>
+                  <span class="w-12 h-[1px] bg-red-600"></span>
+               </div>
+               <h1 class="text-[14vw] md:text-[10vw] leading-[0.8] font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-[#a3a3a3] text-left uppercase drop-shadow-2xl">
+                  Taste The <br/> <span class="bg-none text-red-600 drop-shadow-[0_0_20px_rgba(255,0,0,0.5)]">Feeling.</span>
+               </h1>
+               <div id="scrollIndicator" class="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 transition-opacity duration-700">
+                  <span class="text-[10px] font-bold tracking-[0.4em] text-white/40 uppercase">Initiate Experience</span>
+                  <div class="w-8 h-12 border border-white/20 rounded-full flex justify-center pt-2 backdrop-blur-sm animate-bounce shadow-[0_0_15px_rgba(255,255,255,0.05)]">
+                     <div class="w-1 h-2 bg-red-600 rounded-full"></div>
+                  </div>
+               </div>
+            </div>
+
+            <div id="layer2" class="absolute inset-0 flex items-center justify-start pl-[5vw] md:pl-[12vw] z-20 pointer-events-none opacity-0 text-white">
+               <div class="flex flex-col max-w-xl pr-4">
+                  <div class="flex items-center gap-4 mb-8">
+                     <span class="w-8 h-[1px] bg-red-600"></span>
+                     <span class="text-xs font-bold tracking-[0.3em] uppercase text-white/60">Flawless Design</span>
+                  </div>
+                  <h2 class="text-5xl md:text-7xl font-black leading-[0.9] mb-8 uppercase tracking-tighter text-white drop-shadow-2xl">
+                     Zero <span class="text-red-600 italic font-serif pr-2">Sugar</span>.<br/> Maximum <br/> Impact.
+                  </h2>
+                  <div class="pl-6 border-l-[1.5px] border-red-600/50">
+                    <p class="text-lg md:text-xl text-white/80 leading-relaxed font-light backdrop-blur-[2px]">
+                       Engineered for the perfect grip. The new sleek silhouette combines aerospace-grade aluminum with our signature ice-cold thermal retention system.
+                    </p>
+                  </div>
+                  <div class="mt-12 flex flex-col gap-6">
+                     <div class="magnetic-btn bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:bg-white/10 transition-colors duration-300 pointer-events-auto">
+                        <h3 class="text-xl font-bold mb-3 text-white flex items-center gap-3">
+                           <span class="w-2 h-2 rounded-full bg-red-600 shadow-[0_0_10px_rgba(255,0,0,0.8)]"></span>
+                           Refreshing Taste
+                        </h3>
+                        <p class="text-white/60 text-sm leading-relaxed font-light">Experience the iconic Coca-Cola flavor crafted to deliver the perfect balance of sweetness, fizz, and refreshment.</p>
+                     </div>
+                     <div class="magnetic-btn bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)] hover:bg-white/10 transition-colors duration-300 pointer-events-auto">
+                        <h3 class="text-xl font-bold mb-3 text-white flex items-center gap-3">
+                           <span class="w-2 h-2 rounded-full bg-red-600 shadow-[0_0_10px_rgba(255,0,0,0.8)]"></span>
+                           Instant Refreshment
+                        </h3>
+                        <p class="text-white/60 text-sm leading-relaxed font-light">Ice-cold carbonation and crisp flavor provide an energizing refreshment that turns every moment into something special.</p>
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+            <div id="layer3" class="absolute inset-0 flex items-center justify-end pr-[5vw] md:pr-[12vw] z-20 pointer-events-none text-right opacity-0 text-white">
+               <div class="flex flex-col items-end max-w-xl pl-4">
+                  <h2 class="text-5xl md:text-7xl font-black leading-[0.9] mb-8 uppercase tracking-tighter drop-shadow-2xl">
+                     Pure <span class="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-white">Energy.</span><br/> Liquid Art.
+                  </h2>
+                  <p class="text-lg md:text-xl text-white/80 leading-relaxed font-light backdrop-blur-[2px]">
+                     Every drop is a symphony of flavor. We didn't just redesign the can; we reimagined the entire sensory experience.
+                  </p>
+                  <button class="magnetic-btn mt-10 px-8 py-4 bg-white text-black font-black uppercase tracking-[0.2em] text-xs hover:bg-red-600 hover:text-white transition-all duration-300 pointer-events-auto shadow-[0_0_40px_rgba(255,255,255,0.2)]">
+                     Unlock The Vault
+                  </button>
+               </div>
+            </div>
+
+            <div id="layer4" class="absolute inset-0 flex flex-col items-end justify-center pr-[5vw] md:pr-[10vw] z-20 pointer-events-none opacity-0 text-white">
+               <h2 class="text-[12vw] md:text-[8vw] font-black leading-[0.8] mb-6 uppercase tracking-tighter drop-shadow-2xl text-right">
+                  Taste The <span class="text-red-600 drop-shadow-[0_0_30px_rgba(255,0,0,0.4)]">Magic.</span>
+               </h2>
+               <p class="text-lg md:text-2xl text-white/80 font-light mb-10 max-w-2xl text-right backdrop-blur-sm">
+                  Join millions who choose the refreshing, crisp taste of Coca-Cola every single day.
+               </p>
+               <button id="finalCta" class="magnetic-btn px-12 py-5 bg-red-600 text-white font-black uppercase tracking-[0.3em] text-sm hover:bg-white hover:text-black transition-all duration-500 pointer-events-auto shadow-[0_10px_40px_rgba(255,0,0,0.4)] rounded-full hover:scale-105">
+                  Get Yours Now
+               </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Force the browser to start at the very top of the page on every reload
+        if (history.scrollRestoration) {
+            history.scrollRestoration = 'manual';
+        }
+        window.scrollTo(0, 0);
+
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        
+        // ==========================================
+        // 1. Magnetic Cursor System
+        // ==========================================
+        const dot = document.getElementById('cursor-dot');
+        const ring = document.getElementById('cursor-ring');
+        let mX = window.innerWidth / 2, mY = window.innerHeight / 2;
+        let rX = mX, rY = mY;
+
+        window.addEventListener('mousemove', (e) => {
+            mX = e.clientX; mY = e.clientY;
+            if(!prefersReducedMotion) {
+                dot.style.left = `${mX}px`;
+                dot.style.top = `${mY}px`;
+            }
+            
+
+        });
+
+        const updateCursor = () => {
+            if(!prefersReducedMotion) {
+                rX += (mX - rX) * 0.15;
+                rY += (mY - rY) * 0.15;
+                ring.style.left = `${rX}px`;
+                ring.style.top = `${rY}px`;
+            }
+            requestAnimationFrame(updateCursor);
+        };
+        if(!prefersReducedMotion) updateCursor();
+
+        document.querySelectorAll('.magnetic-btn, a, button').forEach(el => {
+            el.addEventListener('mousemove', (e) => {
+                if(prefersReducedMotion) return;
+                const rect = el.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+                el.style.transform = `translate(${x * 0.2}px, ${y * 0.2}px)`;
+                
+                ring.style.width = '60px'; ring.style.height = '60px';
+                ring.style.backgroundColor = 'rgba(220,38,38,0.1)';
+                ring.style.borderColor = 'rgba(220,38,38,0.5)';
+                dot.style.transform = 'translate(-50%, -50%) scale(0.5)';
+            });
+            el.addEventListener('mouseleave', () => {
+                if(prefersReducedMotion) return;
+                el.style.transform = `translate(0px, 0px)`;
+                ring.style.width = '40px'; ring.style.height = '40px';
+                ring.style.backgroundColor = 'transparent';
+                ring.style.borderColor = '#dc2626';
+                dot.style.transform = 'translate(-50%, -50%) scale(1)';
+            });
+            // Fizz sound on hover
+            el.addEventListener('mouseenter', () => {
+                if(audioCtx && audioCtx.state === 'running' && !isMuted) playFizz();
+            });
+        });
+
+        // ==========================================
+        // 2. Particle Engine (Burst & Trails & Bubbles)
+        // ==========================================
+        const pCanvas = document.getElementById('particleCanvas');
+        const pCtx = pCanvas.getContext('2d');
+        const resizePCanvas = () => { pCanvas.width = window.innerWidth; pCanvas.height = window.innerHeight; };
+        window.addEventListener('resize', resizePCanvas);
+        resizePCanvas();
+
+        let particles = [], trailParticles = [], bubbles = [];
+
+        class Particle {
+            constructor(x, y, type) {
+                this.x = x; this.y = y; this.type = type;
+                this.alpha = 1;
+                
+                if (type === 'trail') {
+                    this.vx = (Math.random() - 0.5); this.vy = (Math.random() - 0.5);
+                    this.life = 0.05; this.size = Math.random() * 2 + 1;
+                } else if (type === 'burst') {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 12 + 2;
+                    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+                    this.life = 0.02; // ~800ms fade
+                    this.size = Math.random() * 4 + 2;
+                    this.isStar = Math.random() > 0.8;
+                } else if (type === 'bubble') {
+                    this.size = Math.random() * 2 + 1;
+                    this.vy = -(Math.random() * 2 + 0.5);
+                    this.vx = Math.sin(this.y * 0.05) * 0.5; // wiggle
+                }
+            }
+            update() {
+                if (this.type === 'burst') this.vy += 0.3; // Gravity
+                if (this.type === 'bubble') this.vx = Math.sin(this.y * 0.05) * 0.5;
+                
+                this.x += this.vx; this.y += this.vy;
+                if(this.type !== 'bubble') this.alpha -= this.life;
+            }
+            draw(ctx) {
+                ctx.globalAlpha = Math.max(0, this.alpha);
+                ctx.fillStyle = (this.isStar || this.type === 'bubble') ? '#ffffff' : '#dc2626';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        const renderParticles = () => {
+            pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+            if (!prefersReducedMotion) {
+                // Trail
+                if (Math.random() > 0.6 && (mX !== rX)) trailParticles.push(new Particle(mX, mY, 'trail'));
+                trailParticles = trailParticles.filter(p => p.alpha > 0);
+                trailParticles.forEach(p => { p.update(); p.draw(pCtx); });
+
+                // Burst
+                particles = particles.filter(p => p.alpha > 0);
+                particles.forEach(p => { p.update(); p.draw(pCtx); });
+
+                // Carbonation Bubbles during Layer 1
+                if (currentFraction < 0.2 && Math.random() > 0.6) {
+                    bubbles.push(new Particle(window.innerWidth/2 + (Math.random()-0.5)*300, window.innerHeight + 10, 'bubble'));
+                }
+                bubbles = bubbles.filter(b => b.y > -10);
+                bubbles.forEach(b => { b.update(); b.draw(pCtx); });
+            }
+            requestAnimationFrame(renderParticles);
+        };
+        requestAnimationFrame(renderParticles);
+
+        document.getElementById('finalCta').addEventListener('click', (e) => {
+            const rect = e.target.getBoundingClientRect();
+            for(let i=0; i<80; i++) particles.push(new Particle(rect.left + rect.width/2, rect.top + rect.height/2, 'burst'));
+        });
+
+        // ==========================================
+        // 3. Web Audio Spatial API
+        // ==========================================
+        let audioCtx, rumbleOsc, rumbleGain;
+        let isMuted = true;
+
+        const initAudioEngine = () => {
+            if(audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            rumbleOsc = audioCtx.createOscillator();
+            rumbleGain = audioCtx.createGain();
+            rumbleOsc.type = 'sine';
+            rumbleOsc.frequency.value = 40; // 40Hz deep sub rumble
+            rumbleOsc.connect(rumbleGain);
+            rumbleGain.connect(audioCtx.destination);
+            rumbleGain.gain.value = 0;
+            rumbleOsc.start();
+        };
+
+        const playFizz = () => {
+            if(prefersReducedMotion) return;
+            const bufferSize = audioCtx.sampleRate * 0.5; // 0.5 seconds
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1; // White noise
+            
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+            const bandpass = audioCtx.createBiquadFilter();
+            bandpass.type = 'bandpass'; bandpass.frequency.value = 3000;
+            
+            const fizzGain = audioCtx.createGain();
+            fizzGain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            fizzGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+            
+            noise.connect(bandpass).connect(fizzGain).connect(audioCtx.destination);
+            noise.start();
+        };
+
+        document.body.addEventListener('click', initAudioEngine, { once: true });
+        
+        document.getElementById('muteToggle').addEventListener('click', () => {
+            isMuted = !isMuted;
+            if(!isMuted) {
+                initAudioEngine();
+                if(audioCtx.state === 'suspended') audioCtx.resume();
+                document.getElementById('audioWave').style.display = 'block';
+            } else {
+                document.getElementById('audioWave').style.display = 'none';
+            }
+        });
+
+
+
+        // ==========================================
+        // 5 & 8. Scroll Engine AVIF/Canvas Render
+        // ==========================================
+        const canvas = document.getElementById('animationCanvas');
+        const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+        
+        const frameCount = 144;
+        const images = [];
+        let imagesLoaded = 0;
+        
+        const loader = document.getElementById('loader');
+        const loadingText = document.getElementById('loadingText');
+        const scrollContainer = document.getElementById('scrollContainer');
+        
+        const currentFrame = index => `Photos/frame-${index.toString().padStart(3, '0')}.jpg`;
+
+        const initCanvas = () => {
+            // Use the image's full native resolution for crispness
+            canvas.width = images[0].width; 
+            canvas.height = images[0].height; 
+            
+            // Enable high quality smoothing (default is true, but we force high quality)
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            
+            context.drawImage(images[0], 0, 0, canvas.width, canvas.height);
+        };
+
+        let actualProgress = 0, displayedProgress = 0;
+        for (let i = 1; i <= frameCount; i++) {
+            const img = new Image();
+            img.src = currentFrame(i);
+            img.onload = () => {
+                imagesLoaded++;
+                actualProgress = (imagesLoaded / frameCount) * 100;
+                if (imagesLoaded === 1) initCanvas(); 
+                if (img.decode) img.decode().catch(() => {});
+            };
+            img.onerror = () => { imagesLoaded++; actualProgress = (imagesLoaded / frameCount) * 100; }
+            images.push(img);
+        }
+
+        const animateLoader = () => {
+            if (displayedProgress < actualProgress) {
+                displayedProgress += Math.max((actualProgress - displayedProgress) * 0.05, 0.5);
+                if (displayedProgress >= 100) displayedProgress = 100;
+                loadingText.innerText = `LOADING ${Math.floor(displayedProgress)}%`;
+                const loadingBar = document.getElementById('loadingBar');
+                if (loadingBar) loadingBar.style.width = displayedProgress + '%';
+            }
+            if (displayedProgress === 100) {
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    scrollContainer.classList.add('visible');
+                    document.body.classList.add('loaded');
+                    document.documentElement.classList.add('loaded');
+                    window.dispatchEvent(new Event('scroll'));
+                }, 500); 
+            } else {
+                requestAnimationFrame(animateLoader);
+            }
+        };
+        requestAnimationFrame(animateLoader);
+
+        let targetFraction = 0, currentFraction = 0, lastDrawnIndex = -1;
+
+        // Mobile touch scrolling logic
+        let touchStartY = 0;
+        window.addEventListener('touchstart', e => touchStartY = e.touches[0].clientY, {passive: true});
+        window.addEventListener('touchmove', e => {
+            if(!prefersReducedMotion) {
+                const delta = touchStartY - e.touches[0].clientY;
+                window.scrollBy(0, delta * 2);
+                touchStartY = e.touches[0].clientY;
+            }
+        }, {passive: true});
+
+        window.addEventListener('scroll', () => {  
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+            if (scrollHeight > 0) targetFraction = Math.max(0, Math.min(1, scrollTop / scrollHeight));
+        }, { passive: true });
+
+        const mapRange = (v, inMin, inMax, outMin, outMax) => v <= inMin ? outMin : v >= inMax ? outMax : outMin + (outMax - outMin) * ((v - inMin) / (inMax - inMin));
+        const useTransform = (v, inR, outR) => {
+            if (v <= inR[0]) return outR[0];
+            if (v >= inR[inR.length - 1]) return outR[outR.length - 1];
+            for (let i = 0; i < inR.length - 1; i++) if (v >= inR[i] && v <= inR[i+1]) return mapRange(v, inR[i], inR[i+1], outR[i], outR[i+1]);
+            return outR[outR.length - 1];
+        };
+        
+        const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        const updateFrame = () => {
+            const lerpSpeed = prefersReducedMotion ? 1 : 0.15;
+            const prevFraction = currentFraction;
+            currentFraction += (targetFraction - currentFraction) * lerpSpeed; 
+            const velocity = Math.abs(currentFraction - prevFraction);
+            
+            // Draw Canvas Frame
+            const index = Math.min(frameCount - 1, Math.max(0, Math.round(currentFraction * (frameCount - 1))));
+            if (index !== lastDrawnIndex) {
+                const img = images[index];
+                if (img && img.complete && img.naturalWidth !== 0) {
+                    // Use native resolution drawing; CSS object-fit will stretch it cleanly
+                    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    lastDrawnIndex = index;
+                }
+            }
+
+
+
+            // Spatial Audio Gain
+            if (rumbleGain && !isMuted) {
+                rumbleGain.gain.value = useTransform(currentFraction, [0, 1], [0.0, 0.4]) + (velocity * 2);
+            }
+
+            // Video Audio Sync
+            const videoAudio = document.getElementById('videoAudio');
+            if (videoAudio && !isMuted) {
+                if (velocity > 0.0001) {
+                    const expectedTime = currentFraction * videoAudio.duration || 0;
+                    if (Math.abs(videoAudio.currentTime - expectedTime) > 0.3) {
+                        videoAudio.currentTime = expectedTime;
+                    }
+                    if (videoAudio.paused) videoAudio.play().catch(()=>{});
+                } else {
+                    if (!videoAudio.paused) videoAudio.pause();
+                }
+            } else if (videoAudio && !videoAudio.paused) {
+                videoAudio.pause();
+            }
+
+            // HTML Elements
+            const ambient1 = document.getElementById('ambient1');
+            const ribbonContainer = document.getElementById('ribbonContainer');
+            const layer1 = document.getElementById('layer1');
+            const layer2 = document.getElementById('layer2');
+            const layer3 = document.getElementById('layer3');
+            const layer4 = document.getElementById('layer4');
+
+            const ambientScale = useTransform(currentFraction, [0, 0.5, 1], [1, 1.5, 0.9]);
+            ambient1.style.transform = `translate(-50%, calc(-50% + ${useTransform(currentFraction, [0, 1], [0, 15])}vh)) scale(${ambientScale})`;
+
+            const ribbonLen1 = easeInOutCubic(useTransform(currentFraction, [0, 0.8], [0, 1]));
+            document.getElementById('ribbon1').style.strokeDashoffset = 1 - ribbonLen1;
+            document.getElementById('ribbon2').style.strokeDashoffset = 1 - ribbonLen1;
+            document.getElementById('ribbon3').style.strokeDashoffset = 1 - easeInOutCubic(useTransform(currentFraction, [0.1, 0.9], [0, 1]));
+            ribbonContainer.style.opacity = useTransform(currentFraction, [0, 0.1, 0.9, 1], [0, 1, 1, 0]);
+
+            layer1.style.transform = `translateY(${useTransform(currentFraction, [0, 0.2], [0, -50])}%)`;
+            layer1.style.opacity = useTransform(currentFraction, [0, 0.15], [1, 0]);
+
+            layer2.style.transform = `translateY(${useTransform(currentFraction, [0.2, 0.35, 0.5], [50, 0, -50])}%)`;
+            layer2.style.opacity = useTransform(currentFraction, [0.2, 0.25, 0.45, 0.5], [0, 1, 1, 0]);
+
+            layer3.style.transform = `translateY(${useTransform(currentFraction, [0.55, 0.7, 0.85], [50, 0, -50])}%)`;
+            layer3.style.opacity = useTransform(currentFraction, [0.55, 0.65, 0.75, 0.85], [0, 1, 1, 0]);
+
+            layer4.style.transform = `translateY(${useTransform(currentFraction, [0.85, 0.95], [20, 0])}%)`;
+            layer4.style.opacity = useTransform(currentFraction, [0.85, 0.95], [0, 1]);
+
+            // Scroll indicator fade
+            const scrollInd = document.getElementById('scrollIndicator');
+            if(scrollInd) scrollInd.style.opacity = currentFraction > 0.02 ? '0' : '1';
+
+            requestAnimationFrame(updateFrame);
+        };
+        requestAnimationFrame(updateFrame);
+
+
+    </script>
+</body>
+</html>
